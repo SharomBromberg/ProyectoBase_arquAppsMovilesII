@@ -519,3 +519,185 @@ self.addEventListener('fetch', function(event) {
     // Service worker mínimo para que sea reconocida como PWA
 });
 ```
+
+***
+
+# Guía de Implementación: Módulo 3 - Seguridad y Autenticación (El Escudo)
+
+Esta guía detalla los pasos exactos para implementar la capa de seguridad y refactorizar la aplicación hacia un patrón MVP estricto. Seguir cada paso en el orden establecido.
+
+### Paso 1: Preparación Visual (Archivos `index.html` y `styles.css`)
+
+**Objetivo:** Preparar la interfaz gráfica para la pantalla de bloqueo sin mezclar estilos directamente en el HTML.
+
+1. **Agregar** las siguientes clases utilitarias al final del archivo `styles.css`:
+```css
+/* Clases para manejar la visibilidad y el bloqueo */
+.hidden { display: none !important; }
+
+.overlay-fullscreen {
+    position: fixed; top: 0; left: 0; 
+    width: 100%; height: 100%; 
+    background: white; z-index: 999; 
+    display: flex; flex-direction: column; 
+    justify-content: center; align-items: center;
+}
+.text-error { color: red; }
+```
+
+2. **Modificar** el archivo `index.html` para incluir el escudo de seguridad y ocultar la aplicación principal al inicio. Agregar esto debajo de la etiqueta `<body>`:
+```html
+<!-- Pantalla de Autenticación -->
+<div id="loginOverlay" class="overlay-fullscreen">
+    <h2>🔒 App Bloqueada</h2>
+    <input type="password" id="pinInput" placeholder="PIN: 1234">
+    <button id="loginBtn">Desbloquear</button>
+    <p id="loginError" class="text-error hidden">PIN Incorrecto</p>
+</div>
+
+<!-- Envolver la app original y ocultarla inicialmente -->
+<div id="appContainer" class="hidden">
+    <!-- El HTML de las tareas y el modal va aquí -->
+</div>
+```
+
+---
+
+### Paso 2: Aislar la Interfaz Gráfica (`TaskView.js`)
+
+**Objetivo:** Extraer toda la manipulación del DOM que está incorrectamente alojada en el Presentador.
+
+1. **Crear** un nuevo archivo llamado `TaskView.js` dentro de la carpeta `app/ui/`.
+2. **Capturar** los elementos del DOM en el constructor de esta nueva clase:
+```javascript
+class TaskView {
+    constructor() {
+        this.loginOverlay = document.getElementById('loginOverlay');
+        this.appContainer = document.getElementById('appContainer');
+        this.pinInput = document.getElementById('pinInput');
+        this.loginError = document.getElementById('loginError');
+        this.taskList = document.getElementById('taskList');
+        // ... (Capturar también los elementos del modal y botones)
+    }
+}
+```
+3. **Crear** métodos públicos para manipular las clases CSS (reemplazando el uso de `style` e `innerHTML` del presentador original):
+```javascript
+    // Mostrar y ocultar la app
+    unlockApp() {
+        this.loginOverlay.classList.add('hidden');
+        this.appContainer.classList.remove('hidden');
+    }
+    showLoginError() {
+        this.loginError.classList.remove('hidden');
+        this.pinInput.value = ''; 
+    }
+
+    // Dibujar lista dinámicamente
+    renderTasks(tasks) {
+        this.taskList.innerHTML = ""; 
+        tasks.forEach(task => {
+            const li = document.createElement('li');
+            li.textContent = task.title;
+            this.taskList.appendChild(li);
+        });
+    }
+
+    // Eventos
+    bindLogin(handler) {
+        document.getElementById('loginBtn').addEventListener('click', () => handler(this.pinInput.value));
+    }
+```
+4. **Agregar** la etiqueta `<script src="app/ui/TaskView.js"></script>` en el `index.html`, justo antes del script del Presentador.
+
+---
+
+### Paso 3: Refactorización del Presentador (`TaskPresenter.js`)
+
+**Objetivo:** Corregir errores estructurales y delegar las decisiones visuales a la nueva Vista.
+
+1. **Corregir** el constructor. En el código original se intenta usar `this.view = view` sin recibirlo como parámetro. Cambiar el constructor a:
+```javascript
+// REEMPLAZAR: constructor(repository) { ... }
+// POR ESTO:
+constructor(view, repository) { 
+    this.view = view; 
+    this.repository = repository;
+    this.correctPIN = "1234";
+    // ...
+}
+```
+
+2. **Eliminar** toda instrucción que contenga `.classList`, `.innerHTML` o `.style`. Reemplazar estas llamadas por delegaciones a la Vista.
+Por ejemplo, en el método de login original se usan estilos directos: `this.loginOverlay.style.display = 'none';`. 
+**Cambiar** la lógica a:
+```javascript
+handleLogin(enteredPIN) { 
+    if (enteredPIN === this.correctPIN) { 
+        this.view.unlockApp(); // Delegar a la vista
+        this.updateView(); 
+    } else {
+        this.view.showLoginError(); // Delegar a la vista
+    }
+}
+```
+
+3. **Reemplazar** la manipulación del modal original. Donde el código dice `this.duplicateModal.classList.add("hidden");` o `this.taskList.innerHTML = "";`, **cambiar** por:
+```javascript
+closeModal() {
+    this.pendingTitle = "";
+    this.view.closeModal(); // Ejecutar método en TaskView
+}
+
+updateView() {
+    const tasks = this.repository.getTasks();
+    this.view.renderTasks(tasks); // Pasar los datos a la Vista
+}
+```
+
+---
+
+### Paso 4: Protección Pasiva y Cifrado (`TaskRepository.js`)
+
+**Objetivo:** Asegurar que los datos viajen a la nube y se guarden localmente de forma incomprensible para terceros.
+
+1. **Agregar** los motores de cifrado al repositorio:
+```javascript
+_encryptData(dataString) {
+    return btoa(unescape(encodeURIComponent(dataString)));
+}
+_decryptData(encryptedString) {
+    return decodeURIComponent(escape(atob(encryptedString)));
+}
+```
+
+2. **Modificar** el constructor. El código original recupera las tareas expuestas con `localStorage.getItem("misTareasPWA")`. **Cambiar** esta lectura para extraer y descifrar la versión segura:
+```javascript
+// REEMPLAZAR LA LECTURA EN EL CONSTRUCTOR POR:
+const savedEncryptedTasks = localStorage.getItem("misTareasPWASecure");
+
+if (savedEncryptedTasks) {
+    this.tasks = JSON.parse(this._decryptData(savedEncryptedTasks));
+} else {
+    this.tasks = [];
+}
+```
+
+3. **Actualizar** el guardado local. **Modificar** o crear el método `_saveToLocalStorage` para cifrar el JSON antes de guardarlo e invocar la sincronización en la nube pasando el paquete seguro:
+```javascript
+_saveToLocalStorage() {
+    const jsonString = JSON.stringify(this.tasks);
+    const encryptedData = this._encryptData(jsonString); // Cifrado activo
+    
+    localStorage.setItem("misTareasPWASecure", encryptedData);
+    this._syncWithCloud(encryptedData); // Pasar dato cifrado al fetch
+}
+```
+
+4. **Verificar** el envío a la nube. El método `_syncWithCloud` original ya espera enviar un `body: encryptedPayload`. Asegurar que la función reciba este parámetro desde el guardado local:
+```javascript
+// Asegurar que el método reciba el parámetro
+async _syncWithCloud(encryptedPayload) {
+    // ... código del fetch existente
+}
+```

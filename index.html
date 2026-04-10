@@ -1,11 +1,79 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=}, initial-scale=1.0">
-    <title>Document</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mi Primera App PWA</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="assets/MyTaskManager.png">
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js')
+                .then(registration => {
+                    console.log('Service Worker registrado con éxito:', registration);
+                })
+                .catch(error => {
+                    console.error('Error al registrar el SW:', error);
+                });
+        } else {
+            console.warn('Service Workers no son soportados en este navegador.');
+        }
+    </script>
 </head>
+
 <body>
-    
+    <!-- Pantalla de Autenticación -->
+    <div id="loginOverlay" class="overlay-fullscreen">
+        <h2>🔒 App Bloqueada</h2>
+        <input type="password" id="pinInput" placeholder="PIN: 1234">
+        <button id="loginBtn">Desbloquear</button>
+        <p id="loginError" class="text-error hidden">PIN Incorrecto</p>
+    </div>
+
+    <!-- Envolver la app original y ocultarla inicialmente -->
+    <div id="appContainer" class="hidden">
+
+        <h1>Mis Tareas</h1>
+        <div class="input-container">
+            <input type="text" id="taskInput" placeholder="Nueva tarea...">
+            <button id="addButton">Añadir</button>
+        </div>
+
+        <ul id="taskList"></ul>
+
+        <!-- Modal de Tarea Repetida (100% libre de estilos en línea) -->
+        <div id="duplicateModal" class="modal-overlay hidden">
+            <div class="modal-content">
+                <h3 class="modal-title">¡Tarea Repetida!</h3>
+                <p>Esta tarea ya existe. ¿Qué deseas hacer?</p>
+
+                <div id="modalPrimaryActions" class="modal-actions">
+                    <button id="replaceModalBtn" class="btn-replace">Reemplazar</button>
+                    <button id="discardModalBtn" class="btn-discard">Descartar</button>
+                </div>
+
+                <div id="modalEditSection" class="modal-edit-section hidden">
+                    <input type="text" id="newTitleInput" class="modal-input" placeholder="Nuevo nombre de tarea...">
+                    <button id="modifyModalBtn" class="btn-modify">Modificar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Cargar los scripts respetando la Clean Architecture -->
+    <script src="app/domain/Task.js"></script>
+    <script src="app/data/TaskRepository.js"></script>
+    <script src="app/ui/TaskView.js"></script>
+
+    <script src="app/presentation/TaskPresenter.js"></script>
+    <script>
+        const repository = new TaskRepository();
+        const view = new TaskView();
+        const presenter = new TaskPresenter(view, repository);
+    </script>
 </body>
+
 </html>

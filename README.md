@@ -772,7 +772,7 @@ Ubiquen el método `_syncWithCloud()` que desarrollamos en el Módulo 2 y reempl
 
 ---
 
-#### Paso 2: Intervención en la Capa de Presentación - Vista (`app/presentation/TaskView.js`)
+#### Paso 2: Intervención en la Capa de Presentación - Vista (`app/ui/TaskView.js`)
 
 **Objetivo Arquitectónico:** Las notificaciones push son una interacción directa con la interfaz del sistema operativo, por ende, su gestión recae en la capa de la Vista. 
 

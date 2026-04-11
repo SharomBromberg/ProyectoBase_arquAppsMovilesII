@@ -702,7 +702,7 @@ async _syncWithCloud(encryptedPayload) {
 }
 ```
 
-
+----------------------
 ### Guía Práctica: Implementación del Módulo 4
 
 #### Paso 1: Intervención en la Capa de Datos (`app/data/TaskRepository.js`)

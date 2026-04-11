@@ -701,3 +701,155 @@ async _syncWithCloud(encryptedPayload) {
     // ... código del fetch existente
 }
 ```
+
+
+### Guía Práctica: Implementación del Módulo 4
+
+#### Paso 1: Intervención en la Capa de Datos (`app/data/TaskRepository.js`)
+
+**Objetivo Arquitectónico:** Reemplazar el servicio de simulación temporal por la API RESTful "JSONPlaceholder" para la obtención (GET) y el envío simulado (POST) de datos. La lógica de red pertenece exclusivamente al repositorio.
+
+**1.1. Actualización del Constructor**
+Ubiquen el método `constructor()` en su archivo `TaskRepository.js`. Deberán reemplazar la URL anterior por el nuevo *endpoint* de la API. Reemplacen su constructor actual por el siguiente bloque:
+
+```javascript
+    constructor() {
+        // Nueva directiva: Asignación del endpoint de la API RESTful externa
+        this.apiUrl = "https://jsonplaceholder.typicode.com/todos";
+        
+        const savedEncryptedTasks = localStorage.getItem("misTareasPWASecure");
+        if (savedEncryptedTasks) {
+            this.tasks = JSON.parse(this._decryptData(savedEncryptedTasks));
+        } else {
+            this.tasks = [];
+        }
+    }
+```
+
+**1.2. Implementación de la Obtención de Datos (GET)**
+Inmediatamente debajo del constructor, agreguen el siguiente método asíncrono. Su función es consumir la API externa únicamente si la estructura de datos local se encuentra vacía, preservando así sus datos preexistentes:
+
+```javascript
+    async loadExternalTasks() {
+        if (this.tasks.length === 0) {
+            try {
+                const response = await fetch(`${this.apiUrl}?_limit=3`);
+                const apiTasks = await response.json();
+                
+                this.tasks = apiTasks.map(t => ({ id: t.id, title: t.title, completed: t.completed }));
+                
+                this._saveToLocalStorage();
+                console.log("Datos obtenidos de JSONPlaceholder exitosamente.");
+            } catch (error) {
+                console.warn("Error de red: No se pudo conectar a la API externa.");
+            }
+        }
+    }
+```
+
+**1.3. Modificación de la Sincronización en la Nube (POST)**
+Ubiquen el método `_syncWithCloud()` que desarrollamos en el Módulo 2 y reemplácenlo en su totalidad por esta nueva versión, la cual formatea correctamente el paquete de envío para la API RESTful:
+
+```javascript
+    async _syncWithCloud() {
+        if(this.tasks.length === 0) return;
+        
+        const lastTask = this.tasks[this.tasks.length - 1];
+
+        try {
+            await fetch(this.apiUrl, {
+                method: "POST",
+                headers: { "Content-Type": "application/json; charset=UTF-8" },
+                body: JSON.stringify(lastTask) 
+            });
+            console.log("Sincronizacion RESTful (POST) exitosa en la nube.");
+        } catch (error) {
+            console.warn("Sin conexion. Datos asegurados en LocalStorage.");
+        }
+    }
+```
+*Nota: Los métodos de cifrado (`_encryptData`, `_decryptData`) y los métodos CRUD (`addTask`, `deleteTask`, etc.) no deben sufrir ninguna alteración.*
+
+---
+
+#### Paso 2: Intervención en la Capa de Presentación - Vista (`app/presentation/TaskView.js`)
+
+**Objetivo Arquitectónico:** Las notificaciones push son una interacción directa con la interfaz del sistema operativo, por ende, su gestión recae en la capa de la Vista. 
+
+Desplácense hasta el final del archivo `TaskView.js`. Inmediatamente antes de la última llave de cierre `}` de la clase, incorporen los siguientes dos métodos:
+
+```javascript
+    requestNotificationPermission() {
+        if ("Notification" in window) {
+            Notification.requestPermission().then(permission => {
+                if (permission === "granted") {
+                    console.log("Permiso de notificaciones concedido por el usuario.");
+                }
+            });
+        }
+    }
+
+    showNotification(title, message) {
+        if ("Notification" in window && Notification.permission === "granted") {
+            new Notification(title, {
+                body: message,
+                icon: "assets/MyTaskManager.png" 
+            });
+        }
+    }
+```
+
+---
+
+#### Paso 3: Intervención en la Capa de Presentación - Presentador (`app/presentation/TaskPresenter.js`)
+
+**Objetivo Arquitectónico:** El Presentador se desempeña como el orquestador de la aplicación. Es su deber invocar la solicitud de permisos, ordenar la carga de datos externos al iniciar sesión y ejecutar la notificación cuando se confirme la creación de una entidad.
+
+**3.1. Refactorización del Método de Autenticación**
+Ubiquen el método `handleLogin`. Deberán reemplazarlo por la siguiente estructura asíncrona, la cual fuerza a la aplicación a esperar la respuesta de la red antes de retirar el escudo de seguridad:
+
+```javascript
+    async handleLogin(enteredPIN) {
+        if (enteredPIN === this.correctPIN) {
+            this.view.requestNotificationPermission();
+            
+            await this.repository.loadExternalTasks();
+            
+            this.view.unlockApp();
+            this.updateView();
+        } else {
+            this.view.showLoginError();
+        }
+    }
+```
+
+**3.2. Integración de la Notificación en la Creación de Tareas**
+Ubiquen el método `onAddTaskClicked`. Su tarea es agregar la invocación de la notificación exclusivamente en el bloque lógico de éxito, antes de finalizar la función. El método debe quedar de la siguiente manera:
+
+```javascript
+    onAddTaskClicked(title) {
+        if (title === "") return;
+
+        if (this.repository.taskExists(title)) {
+            this.pendingTitle = title;
+            this.view.showModal();
+        } else {
+            this.repository.addTask(title);
+            this.view.clearTaskInput();
+            this.updateView();
+            
+            this.view.showNotification("Nueva Tarea Registrada", `Se ha agregado la tarea: ${title}`);
+        }
+    }
+```
+
+---
+
+### Protocolo de Validación
+
+Para corroborar la correcta implementación de estos requerimientos, procedan con los siguientes pasos de auditoría:
+1. Eliminar los datos de navegación (Caché y LocalStorage) para simular una instalación limpia.
+2. Ingresar el PIN de seguridad asignado ("1234").
+3. Otorgar los permisos de notificación cuando el navegador lo solicite a través del hilo principal.
+4. Verificar en la interfaz gráfica la inserción exitosa de tres registros importados desde la API RESTful.
+5. Ingresar una nueva tarea manual y valide la recepción de la notificación push a nivel de sistema.
